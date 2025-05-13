@@ -56,6 +56,40 @@ where
     AsyncRayonHandle { rx }
 }
 
+/// Same as `spawn` but with more flexible lifetimes
+pub fn spawn_scoped<F, R>(func: F) -> AsyncRayonHandle<R>
+where
+    F: FnOnce() -> R + Send,
+    R: Send,
+{
+    let (tx, rx) = oneshot::channel();
+
+    rayon::scope(|s| {
+        s.spawn(|_| {
+            let _result = tx.send(catch_unwind(AssertUnwindSafe(func)));
+        });
+    });
+
+    AsyncRayonHandle { rx }
+}
+
+/// Same as `spawn_fifo` but with more flexible lifetimes
+pub fn spawn_fifo_scoped<'scope, F, R>(func: F) -> AsyncRayonHandle<R>
+where
+    F: FnOnce() -> R + Send + 'scope,
+    R: Send + 'scope,
+{
+    let (tx, rx) = oneshot::channel();
+
+    rayon::scope_fifo(|s| {
+        s.spawn_fifo(|_| {
+            let _result = tx.send(catch_unwind(AssertUnwindSafe(func)));
+        });
+    });
+
+    AsyncRayonHandle { rx }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
