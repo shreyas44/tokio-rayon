@@ -74,21 +74,41 @@ where
 }
 
 /// Same as `spawn_fifo` but with more flexible lifetimes
-pub fn spawn_fifo_scoped<'scope, F, R>(func: F) -> AsyncRayonHandle<R>
+pub fn spawn_fifo_scoped<F, R>(func: F) -> AsyncRayonHandle<R>
 where
-    F: FnOnce() -> R + Send + 'scope,
-    R: Send + 'scope,
+    F: FnOnce() -> R + Send,
+    R: Send + 'static,
 {
     let (tx, rx) = oneshot::channel();
 
-    rayon::scope_fifo(|s| {
-        s.spawn_fifo(|_| {
-            let _result = tx.send(catch_unwind(AssertUnwindSafe(func)));
-        });
+    // SAFETY: This is extremely unsafe! We're transmuting the lifetime of the function
+    // to 'static. The caller MUST ensure that any captured references in the closure
+    // remain valid until the task completes.
+    let static_func: Box<dyn FnOnce() -> R + Send + 'static> =
+        unsafe { std::mem::transmute(Box::new(func) as Box<dyn FnOnce() -> R + Send + '_>) };
+
+    rayon::spawn_fifo(move || {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(static_func));
+        let _ = tx.send(result);
     });
 
     AsyncRayonHandle { rx }
 }
+//pub fn spawn_fifo_scoped<'scope, F, R>(func: F) -> AsyncRayonHandle<R>
+//where
+//    F: FnOnce() -> R + Send + 'scope,
+//    R: Send + 'scope,
+//{
+//    let (tx, rx) = oneshot::channel();
+//
+//    rayon::scope_fifo(|s| {
+//        s.spawn_fifo(|_| {
+//            let _result = tx.send(catch_unwind(AssertUnwindSafe(func)));
+//        });
+//    });
+//
+//    AsyncRayonHandle { rx }
+//}
 
 #[cfg(test)]
 mod tests {
