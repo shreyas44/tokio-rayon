@@ -70,7 +70,10 @@ where
     let static_func: Box<dyn FnOnce() -> R + Send + 'static> =
         unsafe { std::mem::transmute(Box::new(func) as Box<dyn FnOnce() -> R + Send + '_>) };
 
+    let span = tracing::Span::current();
+
     rayon::spawn(move || {
+        let _entered = span.enter();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(static_func));
         let _ = tx.send(result);
     });
@@ -92,7 +95,10 @@ where
     let static_func: Box<dyn FnOnce() -> R + Send + 'static> =
         unsafe { std::mem::transmute(Box::new(func) as Box<dyn FnOnce() -> R + Send + '_>) };
 
+    let span = tracing::Span::current();
+
     rayon::spawn_fifo(move || {
+        let _entered = span.enter();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(static_func));
         let _ = tx.send(result);
     });
